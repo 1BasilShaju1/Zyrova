@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZYROVA - Premium Vehicle Rentals</title>
+<style>
+:root{--bg:#0D0F14;--panel:#161A22;--alt:#1B202A;--border:#2A3040;--gold:#D4AF37;--gold-d:#A8871F;--text:#ECEFF4;--muted:#8A93A6;--green:#3DDC97;--red:#FF5C6C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;padding:16px 28px;background:linear-gradient(90deg,#1C212C,var(--bg));border-bottom:2px solid var(--gold)}
+.logo{font:700 34px Georgia,serif;letter-spacing:.25em;color:var(--gold)}
+.tag{font-size:12px;color:var(--muted);letter-spacing:.1em}
+main{padding:18px 28px 28px;max-width:1200px;margin:auto}
+.btn{background:var(--alt);color:var(--text);border:1px solid var(--border);border-radius:9px;padding:9px 18px;font:600 14px inherit;cursor:pointer}
+.btn:hover{filter:brightness(1.25)}
+.btn.active,.btn.gold{background:var(--gold);color:var(--bg);border-color:var(--gold)}
+.btn:disabled{opacity:.5;cursor:default}
+.bar{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;margin-bottom:14px}
+.cats{display:flex;flex-wrap:wrap;gap:8px}
+input{background:var(--alt);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font:14px inherit;width:100%}
+input:focus{outline:none;border-color:var(--gold)}
+#search{width:240px}
+.wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+table{width:100%;border-collapse:collapse;min-width:720px}
+th{background:var(--alt);color:var(--gold);text-align:left;padding:11px 12px;border-bottom:2px solid var(--gold-d)}
+td{padding:10px 12px}
+tbody tr:nth-child(even){background:var(--alt)}
+tbody tr{cursor:pointer}
+tbody tr.sel{background:#3A3220!important}
+.price,.total{color:var(--gold)}.muted{color:var(--muted)}
+.ok{color:var(--green);font-weight:700}.no{color:var(--red);font-weight:700}
+.foot{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;margin-top:14px}
+.hide{display:none}
+h2{font:700 24px Georgia,serif;margin:0 0 14px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px}
+.box{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:100%;max-width:440px}
+.box h3{font:700 24px Georgia,serif;color:var(--gold);margin:0}
+.box label{display:block;font-size:12px;color:var(--muted);margin:12px 0 3px}
+.big{font:700 26px Georgia,serif;margin:2px 0 14px}
+.row{display:flex;gap:10px;justify-content:flex-end}
+.err{color:var(--red);min-height:18px;margin-bottom:8px}
+pre{background:var(--alt);padding:14px;border-radius:8px;overflow-x:auto;font-size:13px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--alt);border:1px solid var(--gold);padding:10px 18px;border-radius:9px;opacity:0;transition:.25s;pointer-events:none}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div><div class="logo">Z Y R O V A</div><div class="tag">PREMIUM VEHICLE RENTALS</div></div>
+  <nav style="display:flex;gap:10px">
+    <button class="btn active" id="nav-fleet">Fleet</button>
+    <button class="btn" id="nav-bookings">Bookings</button>
+  </nav>
+</header>
+<main>
+  <section id="fleet">
+    <div class="bar">
+      <div class="cats" id="cats"></div>
+      <input id="search" placeholder="Search by name or type" aria-label="Search">
+    </div>
+    <div class="wrap"><table><thead><tr><th>ID</th><th>Vehicle</th><th>Type</th><th>Category</th><th>Price / Day</th><th>Status</th></tr></thead><tbody id="fleet-body"></tbody></table></div>
+    <div class="foot">
+      <span class="muted" id="stats"></span>
+      <div class="row"><button class="btn" id="ret">Return Vehicle</button><button class="btn gold" id="rent">Rent Vehicle</button></div>
+    </div>
+  </section>
+  <section id="bookings" class="hide">
+    <h2>Current Bookings</h2>
+    <div class="wrap"><table><thead><tr><th>ID</th><th>Customer</th><th>Phone</th><th>Vehicle</th><th>Days</th><th>Total</th></tr></thead><tbody id="book-body"></tbody></table></div>
+    <div class="foot">
+      <b class="price" id="revenue"></b>
+      <button class="btn gold" id="ret2">Return Selected</button>
+    </div>
+  </section>
+</main>
+<div id="modal" class="modal hide"></div>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const money = n => "Rs. " + Number(n).toLocaleString("en-IN");
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const CATS = ["All","Premium","Luxury","Sports & Supercars"];
+let vehicles = [], bookings = [], cat = "All", selFleet = null, selBook = null;
+
+async function api(path, body) {
+  const opt = body ? {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:new URLSearchParams(body)} : {};
+  const r = await fetch(path, opt);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+function toast(msg) { const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600); }
+async function load() { [vehicles, bookings] = await Promise.all([api("/api/vehicles"), api("/api/bookings")]); renderFleet(); renderBookings(); }
+
+function renderCats() {
+  $("cats").innerHTML = "";
+  CATS.forEach(n => { const b=document.createElement("button"); b.className="btn"+(n===cat?" active":""); b.textContent=n;
+    b.onclick=()=>{cat=n;renderCats();renderFleet();}; $("cats").appendChild(b); });
+}
+function renderFleet() {
+  const q = $("search").value.trim().toLowerCase();
+  const list = vehicles.filter(v => (cat==="All"||v.category===cat) && (!q||v.name.toLowerCase().includes(q)||v.type.toLowerCase().includes(q)));
+  $("fleet-body").innerHTML = list.map(v => `<tr data-id="${v.id}" class="${v.id===selFleet?"sel":""}">
+    <td>${v.id}</td><td>${esc(v.name)}</td><td>${esc(v.type)}</td><td class="muted">${esc(v.category)}</td>
+    <td class="price">${money(v.pricePerDay)}</td><td class="${v.available?"ok":"no"}">${v.available?"Available":"Rented"}</td></tr>`).join("");
+  $("stats").textContent = `${list.length} vehicles shown  |  ${list.filter(v=>v.available).length} available`;
+  $("fleet-body").querySelectorAll("tr").forEach(tr => { tr.onclick=()=>{selFleet=+tr.dataset.id;renderFleet();}; tr.ondblclick=rentSelected; });
+}
+function renderBookings() {
+  $("book-body").innerHTML = bookings.map(b => `<tr data-id="${b.vehicleId}" class="${b.vehicleId===selBook?"sel":""}">
+    <td>${b.vehicleId}</td><td>${esc(b.customer)}</td><td>${esc(b.phone)}</td><td>${esc(b.vehicle)}</td><td>${b.days}</td><td class="total">${money(b.total)}</td></tr>`).join("");
+  $("revenue").textContent = bookings.length ? `${bookings.length} active booking(s)  |  Total value: ${money(bookings.reduce((s,b)=>s+b.total,0))}` : "No vehicles are currently rented.";
+  $("book-body").querySelectorAll("tr").forEach(tr => tr.onclick=()=>{selBook=+tr.dataset.id;renderBookings();});
+}
+function show(name) {
+  $("fleet").classList.toggle("hide", name!=="fleet"); $("bookings").classList.toggle("hide", name!=="bookings");
+  $("nav-fleet").classList.toggle("active", name==="fleet"); $("nav-bookings").classList.toggle("active", name==="bookings");
+}
+function modal(html) { const m=$("modal"); m.innerHTML=`<div class="box">${html}</div>`; m.classList.remove("hide"); }
+function closeModal() { $("modal").classList.add("hide"); }
+
+function rentSelected() {
+  const v = vehicles.find(x => x.id===selFleet);
+  if (!v) return toast("Please select a vehicle from the list first.");
+  if (!v.available) return toast(v.name + " is already rented.");
+  modal(`<h3>${esc(v.name)}</h3><div class="muted" style="font-size:12px">${esc(v.type)} | ${esc(v.category)} | ${money(v.pricePerDay)} / day</div>
+    <label>Customer name</label><input id="f-name" maxlength="80" autocomplete="name">
+    <label>Phone number</label><input id="f-phone" inputmode="tel" autocomplete="tel">
+    <label>Rental days</label><input id="f-days" type="number" min="1" max="365" value="1">
+    <label>TOTAL AMOUNT</label><div class="big" id="f-total">${money(v.pricePerDay)}</div>
+    <div class="err" id="f-err"></div>
+    <div class="row"><button class="btn" id="f-cancel">Cancel</button><button class="btn gold" id="f-ok">Confirm Booking</button></div>`);
+  $("f-days").oninput = () => { const d=Math.max(0,parseInt($("f-days").value)||0); $("f-total").textContent=money(v.pricePerDay*d); };
+  $("f-cancel").onclick = closeModal;
+  $("f-ok").onclick = async () => {
+    try {
+      const b = await api("/api/rent", {id:v.id, customer:$("f-name").value, phone:$("f-phone").value, days:$("f-days").value});
+      await load(); receipt(b);
+    } catch (e) { $("f-err").textContent = e.message; }
+  };
+  $("f-name").focus();
+}
+function receipt(b) {
+  const L = (k,v) => k.padEnd(15) + ": " + v + "\n", bar = "=".repeat(42) + "\n";
+  const text = bar + "             ZYROVA RECEIPT\n" + bar + L("Customer",b.customer) + L("Phone",b.phone) + L("Vehicle",b.vehicle) +
+    L("Category",b.category) + L("Vehicle Type",b.type) + L("Rental Days",b.days) + L("Price/Day",money(b.pricePerDay)) +
+    L("Total Amount",money(b.total)) + "Booking Status : CONFIRMED\n" + bar;
+  modal(`<h3 style="color:var(--green)">Booking confirmed!</h3><pre>${esc(text)}</pre><div class="row"><button class="btn gold" id="r-done">Done</button></div>`);
+  $("r-done").onclick = closeModal;
+}
+async function doReturn(id) {
+  const v = vehicles.find(x => x.id===id);
+  if (!v) return toast("Please select a vehicle to return.");
+  if (v.available) return toast("This vehicle is already available.");
+  if (!confirm("Return " + v.name + "?")) return;
+  try { await api("/api/return", {id}); selFleet = selBook = null; await load(); toast(v.name + " is now available."); }
+  catch (e) { toast(e.message); }
+}
+
+$("nav-fleet").onclick = () => show("fleet");
+$("nav-bookings").onclick = () => show("bookings");
+$("rent").onclick = rentSelected;
+$("ret").onclick = () => doReturn(selFleet);
+$("ret2").onclick = () => selBook ? doReturn(selBook) : toast("Please select a booking to return.");
+$("search").oninput = renderFleet;
+$("modal").onclick = e => { if (e.target.id==="modal") closeModal(); };
+renderCats(); load().catch(e => toast(e.message));
+</script>
+</body>
+</html>
